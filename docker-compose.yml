@@ -1,4 +1,15 @@
 services:
+  
+  api:
+    image: api
+    build:
+      context: .
+      dockerfile: API/Dockerfile
+    ports:
+      - "80:5000"
+    networks:
+      - postgres-network
+    
   postgres:
     image: postgres
     environment:
@@ -49,3 +60,4 @@ volumes:
 networks:
   postgres-network:
     driver: bridge
+  
