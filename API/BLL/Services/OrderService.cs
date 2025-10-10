@@ -20,84 +20,68 @@ public class OrderService(
 
         try
         {
-            var resultOrders = new List<OrderUnit>();
+            var ordersDal = orderUnits.Select(o => new V1OrderDal
+        {
+            CustomerId = o.CustomerId,
+            DeliveryAddress = o.DeliveryAddress,
+            TotalPriceCents = o.TotalPriceCents,
+            TotalPriceCurrency = o.TotalPriceCurrency,
+            CreatedAt = now,
+            UpdatedAt = now
+        }).ToArray();
 
+        var savedOrders = await orderRepository.BulkInsert(ordersDal, token);
 
-            var ordersDal = orderUnits.Select(orderUnit => new V1OrderDal
+        
+        var orderItems = savedOrders
+            .Zip(orderUnits, (saved, original) => (saved.Id, original.OrderItems))
+            .Where(x => x.OrderItems?.Length > 0)
+            .SelectMany(x => x.OrderItems.Select(item => new V1OrderItemDal
             {
-                CustomerId = orderUnit.CustomerId,
-                DeliveryAddress = orderUnit.DeliveryAddress,
-                TotalPriceCents = orderUnit.TotalPriceCents,
-                TotalPriceCurrency = orderUnit.TotalPriceCurrency,
+                OrderId = x.Id,
+                ProductId = item.ProductId,
+                Quantity = item.Quantity,
+                ProductTitle = item.ProductTitle,
+                ProductUrl = item.ProductUrl,
+                PriceCents = item.PriceCents,
+                PriceCurrency = item.PriceCurrency,
                 CreatedAt = now,
                 UpdatedAt = now
-            }).ToArray();
+            }))
+            .ToArray();
 
-            var savedOrders = await orderRepository.BulkInsert(ordersDal, token);
+        var savedOrderItems = await orderItemRepository.BulkInsert(orderItems, token);
 
-            // 2. Подготавливаем и сохраняем позиции заказов пакетно
-            var allOrderItems = new List<V1OrderItemDal>();
+        
+        var itemsByOrderId = savedOrderItems.GroupBy(x => x.OrderId)
+            .ToDictionary(g => g.Key, g => g.ToArray());
 
-            for (var i = 0; i < savedOrders.Length; i++)
-                if (orderUnits[i].OrderItems?.Length > 0)
-                {
-                    var orderItems = orderUnits[i].OrderItems.Select(item => new V1OrderItemDal
-                    {
-                        OrderId = savedOrders[i].Id, // Связываем с сохраненным заказом
-                        ProductId = item.ProductId,
-                        Quantity = item.Quantity,
-                        ProductTitle = item.ProductTitle,
-                        ProductUrl = item.ProductUrl,
-                        PriceCents = item.PriceCents,
-                        PriceCurrency = item.PriceCurrency,
-                        CreatedAt = now,
-                        UpdatedAt = now
-                    });
-
-                    allOrderItems.AddRange(orderItems);
-                }
-
-            var savedOrderItems = allOrderItems.Count > 0
-                ? await orderItemRepository.BulkInsert(allOrderItems.ToArray(), token)
-                : [];
-
-            // 3. Группируем позиции по OrderId для удобства
-            var orderItemsByOrderId = savedOrderItems.GroupBy(x => x.OrderId)
-                .ToDictionary(g => g.Key, g => g.ToArray());
-
-            // 4. Собираем результат
-            for (var i = 0; i < savedOrders.Length; i++)
+        var result = savedOrders.Select(order => new OrderUnit
+        {
+            Id = order.Id,
+            CustomerId = order.CustomerId,
+            DeliveryAddress = order.DeliveryAddress,
+            TotalPriceCents = order.TotalPriceCents,
+            TotalPriceCurrency = order.TotalPriceCurrency,
+            CreatedAt = order.CreatedAt,
+            UpdatedAt = order.UpdatedAt,
+            OrderItems = itemsByOrderId.GetValueOrDefault(order.Id)?.Select(item => new OrderItemUnit
             {
-                var savedOrder = savedOrders[i];
-                var orderItems = orderItemsByOrderId.GetValueOrDefault(savedOrder.Id) ?? [];
+                Id = item.Id,
+                OrderId = item.OrderId,
+                ProductId = item.ProductId,
+                Quantity = item.Quantity,
+                ProductTitle = item.ProductTitle,
+                ProductUrl = item.ProductUrl,
+                PriceCents = item.PriceCents,
+                PriceCurrency = item.PriceCurrency,
+                CreatedAt = item.CreatedAt,
+                UpdatedAt = item.UpdatedAt
+            }).ToArray() ?? Array.Empty<OrderItemUnit>()
+        }).ToArray();
 
-                resultOrders.Add(new OrderUnit
-                {
-                    Id = savedOrder.Id,
-                    CustomerId = savedOrder.CustomerId,
-                    DeliveryAddress = savedOrder.DeliveryAddress,
-                    TotalPriceCents = savedOrder.TotalPriceCents,
-                    TotalPriceCurrency = savedOrder.TotalPriceCurrency,
-                    CreatedAt = savedOrder.CreatedAt,
-                    UpdatedAt = savedOrder.UpdatedAt,
-                    OrderItems = orderItems.Select(item => new OrderItemUnit
-                    {
-                        Id = item.Id,
-                        OrderId = item.OrderId,
-                        ProductId = item.ProductId,
-                        Quantity = item.Quantity,
-                        ProductTitle = item.ProductTitle,
-                        ProductUrl = item.ProductUrl,
-                        PriceCents = item.PriceCents,
-                        PriceCurrency = item.PriceCurrency,
-                        CreatedAt = item.CreatedAt,
-                        UpdatedAt = item.UpdatedAt
-                    }).ToArray()
-                });
-            }
-
-            await transaction.CommitAsync(token);
-            return resultOrders.ToArray();
+        await transaction.CommitAsync(token);
+        return result;
         }
         catch (Exception e)
         {
