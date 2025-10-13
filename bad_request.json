@@ -1,0 +1,20 @@
+{
+  "orders": [
+    {
+      "customerId": 123,
+      "deliveryAddress": "Краснодар, ул. Ставропольская 205",
+      "totalPriceCents": 18001,
+      "totalPriceCurrency": "RUB",
+      "orderItems": [
+        {
+          "productId": 4,
+          "quantity": 2,
+          "productTitle": "Коврик для мышки",
+          "productUrl": "https://ozon.ru/item/12332454",
+          "priceCents": 9000,
+          "priceCurrency": "RUB"
+        }
+      ]
+    }
+  ]
+}

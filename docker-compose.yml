@@ -1,6 +1,22 @@
 services:
-  
-  
+  api:
+    build:
+      context: .
+      dockerfile: API/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://0.0.0.0:5000
+    networks:
+      - postgres-network
+    depends_on:
+      - pgbouncer
+    volumes:
+      - ./API:/src/API
+      - ./Models:/src/Models
+      - ./Migrations:/src/Migrations
+
   postgres:
     image: postgres
     environment:

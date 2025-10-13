@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using Microsoft.IdentityModel.Tokens;
 using Models.Dto.V1.Requests;
 
 namespace API.Validators;
@@ -6,6 +7,7 @@ public class V1QueryOrdersRequestValidator : AbstractValidator<V1QueryOrdersRequ
 {
     public V1QueryOrdersRequestValidator()
     {
+        RuleFor(x => x).Must(x => !x.Ids.IsNullOrEmpty() || !x.CustomerIds.IsNullOrEmpty()).WithMessage("CustomerId or Ids is required");
         RuleFor(x => x.Page)
             .GreaterThanOrEqualTo(0)
             .WithMessage("Page number cannot be negative");
