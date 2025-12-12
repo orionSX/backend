@@ -1,0 +1,17 @@
+{
+  "DbSettings": {
+    "MigrationConnectionString": "Host=pgbouncer;Port=5432;Database=postgres;User Id=user;Password=mypassword;Pooling=true;LoadTableComposites=true;No Reset On Close=true;Persist Security Info=False;Maximum Pool Size=100;Connection Idle Lifetime=300;Keepalive=300;TCP Keepalive=True",
+    "ConnectionString": "Host=pgbouncer;Port=5432;Database=postgres;User Id=user;Password=mypassword;Pooling=true;LoadTableComposites=true;No Reset On Close=true;Persist Security Info=False;Maximum Pool Size=100;Connection Idle Lifetime=300;Keepalive=300;TCP Keepalive=True"
+  },
+  "RabbitMqSettings": {
+    "HostName": "localhost",
+    "Port": 5672,
+    "OrderCreatedQueue": "oms.order.created"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  }
+}

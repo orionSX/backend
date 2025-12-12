@@ -1,14 +1,20 @@
 ﻿using API.BLL.Models;
+using API.Config;
 using API.DAL;
 using API.DAL.Interfaces;
 using API.DAL.Models;
+using API.Services;
+using Microsoft.Extensions.Options;
 
 namespace API.BLL.Services;
 
 public class OrderService(
     UnitOfWork unitOfWork,
     IOrderRepository orderRepository,
-    IOrderItemRepository orderItemRepository)
+    IOrderItemRepository orderItemRepository,
+    RabbitMqService rabbitMqService, 
+    IOptions<RabbitMqSettings> rabbitMqSettings) 
+    
 {
     /// <summary>
     ///     Метод создания заказов
@@ -79,8 +85,36 @@ public class OrderService(
                 UpdatedAt = item.UpdatedAt
             }).ToArray() ?? Array.Empty<OrderItemUnit>()
         }).ToArray();
-
+        
+        
+        
         await transaction.CommitAsync(token);
+        var messages = result.Select(order => new OmsOrderCreatedMessage
+        {
+            Id = order.Id,
+            CustomerId = order.CustomerId,
+            DeliveryAddress = order.DeliveryAddress,
+            TotalPriceCents = order.TotalPriceCents,
+            TotalPriceCurrency = order.TotalPriceCurrency,
+            CreatedAt = order.CreatedAt,
+            OrderItems = order.OrderItems.Select(item => new OmsOrderItemMessage
+            {
+                Id = item.Id,
+                OrderId = item.OrderId,
+                ProductId = item.ProductId,
+                Quantity = item.Quantity,
+                ProductTitle = item.ProductTitle,
+                ProductUrl = item.ProductUrl,
+                PriceCents = item.PriceCents,
+                PriceCurrency = item.PriceCurrency,
+                CreatedAt = item.CreatedAt
+            }).ToArray()
+        }).ToArray();
+
+        await rabbitMqService.Publish(messages, rabbitMqSettings.Value.OrderCreatedQueue, token);
+        
+        
+
         return result;
         }
         catch (Exception e)

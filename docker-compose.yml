@@ -1,4 +1,14 @@
 services:
+  consumer:
+    image: consumer
+    build:
+      context: .
+      dockerfile: Consumer/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://0.0.0.0:5001
+    networks:
+      - postgres-network
   api:
     build:
       context: .
@@ -16,6 +26,7 @@ services:
       - ./API:/src/API
       - ./Models:/src/Models
       - ./Migrations:/src/Migrations
+      
 
   postgres:
     image: postgres
@@ -59,12 +70,26 @@ services:
       - postgres-network
     depends_on:
       - postgres
+    
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - postgres-network
 
 volumes:
   pgdata:
   pgadmin-data:
+  rabbitmq_data:
 
 networks:
   postgres-network:
     driver: bridge
   
+
+

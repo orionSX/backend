@@ -1,0 +1,18 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "RabbitMqSettings": {
+    "HostName": "rabbitmq",
+    "Port": 5672,
+    "OrderCreatedQueue": "oms.order.created"
+  },
+  "HttpClient": {
+    "Oms": {
+      "BaseAddress": "http://api:5000"
+    }
+  }
+}

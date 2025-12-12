@@ -23,3 +23,14 @@
 **/values.dev.yaml
 LICENSE
 README.md
+# Исключаем ВСЕ конфиги всех проектов
+**/appsettings.json
+**/appsettings.*.json
+
+# Но разрешаем только те, что нужны для текущего проекта
+!API/appsettings.json
+!API/appsettings.*.json
+
+# Или для Consumer - раскомментируйте нужное
+#!Consumer/appsettings.json
+#!Consumer/appsettings.*.json
