@@ -5,6 +5,7 @@ using API.DAL.Interfaces;
 using API.DAL.Models;
 using API.Services;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace API.BLL.Services;
 
@@ -20,13 +21,13 @@ public class OrderService(
     ///     Метод создания заказов
     /// </summary>
     public async Task<OrderUnit[]> BatchInsert(OrderUnit[] orderUnits, CancellationToken token)
-    {
-        var now = DateTimeOffset.UtcNow;
-        await using var transaction = await unitOfWork.BeginTransactionAsync(token);
+{
+    var now = DateTimeOffset.UtcNow;
+    await using var transaction = await unitOfWork.BeginTransactionAsync(token);
 
-        try
-        {
-            var ordersDal = orderUnits.Select(o => new V1OrderDal
+    try
+    {
+        var ordersDal = orderUnits.Select(o => new V1OrderDal
         {
             CustomerId = o.CustomerId,
             DeliveryAddress = o.DeliveryAddress,
@@ -37,7 +38,6 @@ public class OrderService(
         }).ToArray();
 
         var savedOrders = await orderRepository.BulkInsert(ordersDal, token);
-
         
         var orderItems = savedOrders
             .Zip(orderUnits, (saved, original) => (saved.Id, original.OrderItems))
@@ -57,7 +57,6 @@ public class OrderService(
             .ToArray();
 
         var savedOrderItems = await orderItemRepository.BulkInsert(orderItems, token);
-
         
         var itemsByOrderId = savedOrderItems.GroupBy(x => x.OrderId)
             .ToDictionary(g => g.Key, g => g.ToArray());
@@ -86,9 +85,7 @@ public class OrderService(
             }).ToArray() ?? Array.Empty<OrderItemUnit>()
         }).ToArray();
         
-        
-        
-        await transaction.CommitAsync(token);
+        // Сохраняем сообщения перед коммитом
         var messages = result.Select(order => new OmsOrderCreatedMessage
         {
             Id = order.Id,
@@ -111,18 +108,45 @@ public class OrderService(
             }).ToArray()
         }).ToArray();
 
+        // Фиксируем транзакцию БД
+        await transaction.CommitAsync(token);
+        
+        // Отправляем сообщения в RabbitMQ ТОЛЬКО после успешного коммита
+        // Это важно для consistency - если отправка сообщений не удастся,
+        // данные в БД уже будут сохранены
         await rabbitMqService.Publish(messages, rabbitMqSettings.Value.OrderCreatedQueue, token);
-        
-        
 
         return result;
-        }
-        catch (Exception e)
-        {
-            await transaction.RollbackAsync(token);
-            throw;
-        }
     }
+    catch (Exception e)
+    {
+        // Безопасный откат транзакции
+        await SafeRollbackAsync(transaction);
+        throw;
+    }
+}
+
+// Вспомогательный метод для безопасного отката
+private async Task SafeRollbackAsync(NpgsqlTransaction transaction)
+{
+    try
+    {
+        // Проверяем, можно ли сделать откат
+        // Конкретная реализация зависит от вашего IUnitOfWorkTransaction
+        // Если нет свойства IsCompleted, можно использовать try-catch
+        await transaction.RollbackAsync(CancellationToken.None);
+    }
+    catch (InvalidOperationException ex) when (ex.Message.Contains("completed", StringComparison.OrdinalIgnoreCase))
+    {
+        // Транзакция уже завершена - игнорируем ошибку
+        // Логируем при необходимости
+    }
+    catch (Exception ex)
+    {
+        // Другие ошибки при откате - логируем
+        // Можно использовать logger если он доступен
+    }
+}
 
     /// <summary>
     ///     Метод получения заказов

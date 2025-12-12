@@ -15,41 +15,61 @@ namespace API.DAL.Repositories
 
         public async Task<V1AuditLogOrderDal[]> BulkInsert(V1AuditLogOrderDal[] auditLogs, CancellationToken token)
         {
+            if (auditLogs == null || auditLogs.Length == 0)
+                return Array.Empty<V1AuditLogOrderDal>();
+
             var connection = await _unitOfWork.GetConnection(token);
 
             const string sql = @"
-            INSERT INTO audit_log_order 
-            (
-                order_id,
-                order_item_id,
-                customer_id,
-                order_status,
-                created_at,
-                updated_at
-            )
-            SELECT 
-                order_id,
-                order_item_id,
-                customer_id,
-                order_status,
-                created_at,
-                updated_at
-            FROM unnest(@AuditLogs)
-            RETURNING 
-                id,
-                order_id,
-                order_item_id,
-                customer_id,
-                order_status,
-                created_at,
-                updated_at";
+        INSERT INTO audit_log_order 
+        (
+            order_id,
+            order_item_id,
+            customer_id,
+            order_status,
+            created_at,
+            updated_at
+        )
+        SELECT 
+            unnest(@OrderIds),
+            unnest(@OrderItemIds),
+            unnest(@CustomerIds),
+            unnest(@OrderStatuses),
+            unnest(@CreatedAts),
+            unnest(@UpdatedAts)
+        RETURNING 
+            id,
+            order_id,
+            order_item_id,
+            customer_id,
+            order_status,
+            created_at,
+            updated_at";
+
+            // Создаем массивы для каждого поля
+            var orderIds = auditLogs.Select(a => a.OrderId).ToArray();
+            var orderItemIds = auditLogs.Select(a => a.OrderItemId).ToArray();
+            var customerIds = auditLogs.Select(a => a.CustomerId).ToArray();
+            var orderStatuses = auditLogs.Select(a => a.OrderStatus).ToArray();
+            var createdAts = auditLogs.Select(a => a.CreatedAt).ToArray();
+            var updatedAts = auditLogs.Select(a => a.UpdatedAt).ToArray();
 
             var result = await connection.QueryAsync<V1AuditLogOrderDal>(
-                new CommandDefinition(sql, new { AuditLogs = auditLogs }, cancellationToken: token));
+                new CommandDefinition(
+                    sql, 
+                    new 
+                    { 
+                        OrderIds = orderIds,
+                        OrderItemIds = orderItemIds,
+                        CustomerIds = customerIds,
+                        OrderStatuses = orderStatuses,
+                        CreatedAts = createdAts,
+                        UpdatedAts = updatedAts
+                    }, 
+                    cancellationToken: token));
 
             return result.ToArray();
         }
-
         public async Task<V1AuditLogOrderDal[]> Query(QueryAuditLogOrderDalModel model, CancellationToken token)
         {
             // Убеждаемся, что соединение инициализировано

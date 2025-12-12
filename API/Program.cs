@@ -4,6 +4,7 @@ using API.Config;
 using API.DAL;
 using API.DAL.Interfaces;
 using API.DAL.Repositories;
+using API.Jobs;
 using API.Services;
 using API.Validators;
 using Dapper;
@@ -41,7 +42,7 @@ public class Program
         });
 
         builder.Services.AddSwaggerGen();
-
+        builder.Services.AddHostedService<OrderGenerator>();
 
         var app = builder.Build();
 

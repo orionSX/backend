@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Options;
+﻿using System.Diagnostics;
+using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Consumer.Config;
@@ -48,9 +49,15 @@ namespace Consumer.Consumers
                 arguments: null,
                 cancellationToken: cancellationToken);
 
+            var sw = new Stopwatch();
+            
+            
+            
+            await _channel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false, cancellationToken: cancellationToken);
             _consumer = new AsyncEventingBasicConsumer(_channel);
             _consumer.ReceivedAsync += async (sender, args) =>
             {
+                sw.Restart();
                 try
                 {
                     var body = args.Body.ToArray();
@@ -90,17 +97,22 @@ namespace Consumer.Consumers
                             }).ToArray()
                     }, CancellationToken.None);
 
+                    await _channel.BasicAckAsync(args.DeliveryTag, false,cancellationToken);
+                    sw.Stop();
+                    _logger.LogInformation($"Order created consumed in {sw.ElapsedMilliseconds}ms");
                     _logger.LogInformation("Successfully processed order {OrderId}", order.Id);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error processing RabbitMQ message");
+                    
+                    _logger.LogError(ex, $"Error processing RabbitMQ message: {ex.Message}");
+                    await _channel.BasicNackAsync(args.DeliveryTag, false,true,cancellationToken);
                 }
             };
 
             await _channel.BasicConsumeAsync(
                 queue: _rabbitMqSettings.Value.OrderCreatedQueue,
-                autoAck: true,
+                autoAck: false,
                 consumer: _consumer,
                 cancellationToken: cancellationToken);
 

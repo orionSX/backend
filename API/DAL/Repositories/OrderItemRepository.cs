@@ -8,51 +8,77 @@ namespace API.DAL.Repositories;
 public class OrderItemRepository(UnitOfWork unitOfWork) : IOrderItemRepository
 {
     public async Task<V1OrderItemDal[]> BulkInsert(V1OrderItemDal[] model, CancellationToken token)
-    {
-        var sql = @"
-            insert into order_items 
-            (
-                order_id,
-                product_id,
-                quantity,
-                product_title,
-                product_url,
-                price_cents,
-                price_currency,
-                created_at,
-                updated_at
-            )
-            select 
-                order_id,
-                product_id,
-                quantity,
-                product_title,
-                product_url,
-                price_cents,
-                price_currency,
-                created_at,
-                updated_at
-            from unnest(@OrderItems)
-            returning 
-                id,
-                order_id,
-                product_id,
-                quantity,
-                product_title,
-                product_url,
-                price_cents,
-                price_currency,
-                created_at,
-                updated_at;
-        ";
+{
+    if (model == null || model.Length == 0)
+        return Array.Empty<V1OrderItemDal>();
 
-        var conn = await unitOfWork.GetConnection(token);
-        var res = await conn.QueryAsync<V1OrderItemDal>(new CommandDefinition(
-            sql, new { OrderItems = model }, cancellationToken: token));
+    var connection = await unitOfWork.GetConnection(token);
 
-        return res.ToArray();
-    }
+    const string sql = @"
+        INSERT INTO order_items 
+        (
+            order_id,
+            product_id,
+            quantity,
+            product_title,
+            product_url,
+            price_cents,
+            price_currency,
+            created_at,
+            updated_at
+        )
+        SELECT 
+            unnest(@OrderIds),
+            unnest(@ProductIds),
+            unnest(@Quantities),
+            unnest(@ProductTitles),
+            unnest(@ProductUrls),
+            unnest(@PriceCents),
+            unnest(@PriceCurrencies),
+            unnest(@CreatedAts),
+            unnest(@UpdatedAts)
+        RETURNING 
+            id,
+            order_id,
+            product_id,
+            quantity,
+            product_title,
+            product_url,
+            price_cents,
+            price_currency,
+            created_at,
+            updated_at";
 
+    // Создаем массивы для каждого поля
+    var orderIds = model.Select(m => m.OrderId).ToArray();
+    var productIds = model.Select(m => m.ProductId).ToArray();
+    var quantities = model.Select(m => m.Quantity).ToArray();
+    var productTitles = model.Select(m => m.ProductTitle).ToArray();
+    var productUrls = model.Select(m => m.ProductUrl).ToArray();
+    var priceCents = model.Select(m => m.PriceCents).ToArray();
+    var priceCurrencies = model.Select(m => m.PriceCurrency).ToArray();
+    var createdAts = model.Select(m => m.CreatedAt).ToArray();
+    var updatedAts = model.Select(m => m.UpdatedAt).ToArray();
+
+    var result = await connection.QueryAsync<V1OrderItemDal>(
+        new CommandDefinition(
+            sql, 
+            new 
+            { 
+                OrderIds = orderIds,
+                ProductIds = productIds,
+                Quantities = quantities,
+                ProductTitles = productTitles,
+                ProductUrls = productUrls,
+                PriceCents = priceCents,
+                PriceCurrencies = priceCurrencies,
+                CreatedAts = createdAts,
+                UpdatedAts = updatedAts
+            }, 
+            cancellationToken: token));
+
+    return result.ToArray();
+}
     public async Task<V1OrderItemDal[]> Query(QueryOrderItemsDalModel model,
         CancellationToken token)
     {

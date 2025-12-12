@@ -1,65 +1,169 @@
 ﻿using Dapper;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using System.Data;
+using Microsoft.Extensions.Logging;
 using API.DAL;
-using API.DAL.Models;
 
-public class UnitOfWork(IOptions<DbSettings> dbSettings) : IDisposable
+namespace API.DAL
 {
-    private NpgsqlConnection _connection;
-
-    public async Task<NpgsqlConnection> GetConnection(CancellationToken token)
+    public interface IUnitOfWork : IAsyncDisposable, IDisposable
     {
-        if (_connection is not null)
+        Task<NpgsqlConnection> GetConnection(CancellationToken token);
+        Task<NpgsqlTransaction> BeginTransactionAsync(CancellationToken token);
+    }
+
+    public class UnitOfWork : IUnitOfWork
+    {
+        private readonly string _connectionString;
+        private readonly ILogger<UnitOfWork> _logger;
+        private NpgsqlConnection _connection;
+        private bool _disposed;
+        private static NpgsqlDataSource _dataSource;
+        private static readonly object _dataSourceLock = new();
+        private readonly SemaphoreSlim _connectionLock = new(1, 1);
+
+        public UnitOfWork(
+            IOptions<DbSettings> dbSettings,
+            ILogger<UnitOfWork> logger)
         {
-            return _connection;
+            _connectionString = dbSettings?.Value?.ConnectionString 
+                ?? throw new ArgumentNullException(nameof(dbSettings));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            
+            InitializeDataSource();
         }
 
-        var dataSource = new NpgsqlDataSourceBuilder(dbSettings.Value.ConnectionString);
-
-        // Регистрируем все композитные типы
-        dataSource.MapComposite<V1OrderDal>("v1_order");
-        dataSource.MapComposite<V1OrderItemDal>("v1_order_item");
-        dataSource.MapComposite<V1AuditLogOrderDal>("v1_audit_log_order"); 
-
-        _connection = dataSource.Build().CreateConnection();
-        _connection.StateChange += (sender, args) =>
+        private void InitializeDataSource()
         {
-            if (args.CurrentState == ConnectionState.Closed)
-                _connection = null;
-        };
+            if (_dataSource != null) 
+                return;
 
-        await _connection.OpenAsync(token);
+            lock (_dataSourceLock)
+            {
+                if (_dataSource != null) 
+                    return;
 
-        return _connection;
-    }
+                _logger.LogInformation("Initializing PostgreSQL DataSource");
+                
+                var builder = new NpgsqlDataSourceBuilder(_connectionString);
+                
+                builder.EnableDynamicJson();
+                
+                
+                _dataSource = builder.Build();
+            }
+        }
 
-    public NpgsqlConnection Connection => _connection;
-    public NpgsqlTransaction Transaction { get; private set; }
+        public async Task<NpgsqlConnection> GetConnection(CancellationToken token)
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(UnitOfWork));
 
-    public async ValueTask<NpgsqlTransaction> BeginTransactionAsync(CancellationToken token)
-    {
-        _connection ??= await GetConnection(token);
-        Transaction = await _connection.BeginTransactionAsync(token);
-        return Transaction;
-    }
+            await _connectionLock.WaitAsync(token);
+            
+            try
+            {
+                if (_connection != null && _connection.State == System.Data.ConnectionState.Open)
+                {
+                    return _connection;
+                }
 
-    public void Dispose()
-    {
-        Transaction?.Dispose();
-        DisposeConnection();
-        GC.SuppressFinalize(this);
-    }
+                if (_connection != null)
+                {
+                    try
+                    {
+                        await _connection.CloseAsync();
+                        await _connection.DisposeAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Error closing old connection");
+                    }
+                    finally
+                    {
+                        _connection = null;
+                    }
+                }
 
-    ~UnitOfWork()
-    {
-        DisposeConnection();
-    }
+                _connection = await _dataSource.OpenConnectionAsync(token);
+                return _connection;
+            }
+            finally
+            {
+                _connectionLock.Release();
+            }
+        }
 
-    private void DisposeConnection()
-    {
-        _connection?.Dispose();
-        _connection = null;
+        public async Task<NpgsqlTransaction> BeginTransactionAsync(CancellationToken token)
+        {
+            var connection = await GetConnection(token);
+            return await connection.BeginTransactionAsync(token);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await DisposeAsyncCore().ConfigureAwait(false);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual async ValueTask DisposeAsyncCore()
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+
+            if (_connection != null)
+            {
+                try
+                {
+                    await _connection.CloseAsync();
+                    await _connection.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error disposing connection");
+                }
+                finally
+                {
+                    _connection = null;
+                }
+            }
+
+            _connectionLock?.Dispose();
+        }
+
+        public void Dispose()
+        {
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed)
+                return;
+
+            if (disposing)
+            {
+                // Синхронное освобождение ресурсов
+                try
+                {
+                    // Пытаемся асинхронно освободить, но синхронно
+                    DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error during synchronous dispose");
+                }
+            }
+
+            _disposed = true;
+        }
+
+        ~UnitOfWork()
+        {
+            Dispose(disposing: false);
+        }
     }
 }

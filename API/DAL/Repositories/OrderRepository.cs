@@ -9,48 +9,61 @@ public class OrderRepository(UnitOfWork unitOfWork) : IOrderRepository
 {
     public async Task<V1OrderDal[]> BulkInsert(V1OrderDal[] model, CancellationToken token)
     {
-        // пишем sql
-        // после from можно увидеть unnest(@Orders) - это и есть механизм композитных типов
-        var sql = @"
-            insert into orders 
-            (
-                customer_id,
-                delivery_address,
-                total_price_cents,
-                total_price_currency,
-                created_at,
-                updated_at
-             )
-            select 
-                customer_id,
-                delivery_address,
-                total_price_cents,
-                total_price_currency,
-                created_at,
-                updated_at
-            from unnest(@Orders)
-            returning 
-                id,
-                customer_id,
-                delivery_address,
-                total_price_cents,
-                total_price_currency,
-                created_at,
-                updated_at;
-        ";
+        if (model == null || model.Length == 0)
+            return Array.Empty<V1OrderDal>();
 
-        // из unitOfWork получаем соединение
-        var conn = await unitOfWork.GetConnection(token);
-        // выполняем запрос на query, потому что после 
-        // bulk-insert-a мы захотели returning заинсерченных строк.
-        // new {Orders = model} - это динамический тип данных
-        // Dapper просто возьмет название поля и заменит в sql-запросе @Orders на наши модели
-        var res = await conn.QueryAsync<V1OrderDal>(new CommandDefinition(
-            sql, new { Orders = model }, cancellationToken: token));
+        var connection = await unitOfWork.GetConnection(token);
 
-        return res.ToArray();
+        const string sql = @"
+        INSERT INTO orders 
+        (
+            customer_id,
+            delivery_address,
+            total_price_cents,
+            total_price_currency,
+            created_at,
+            updated_at
+        )
+        SELECT 
+            unnest(@CustomerIds),
+            unnest(@DeliveryAddresses),
+            unnest(@TotalPriceCents),
+            unnest(@TotalPriceCurrencies),
+            unnest(@CreatedAts),
+            unnest(@UpdatedAts)
+        RETURNING 
+            id,
+            customer_id,
+            delivery_address,
+            total_price_cents,
+            total_price_currency,
+            created_at,
+            updated_at";
+
+        // Создаем массивы для каждого поля
+        var customerIds = model.Select(m => m.CustomerId).ToArray();
+        var deliveryAddresses = model.Select(m => m.DeliveryAddress).ToArray();
+        var totalPriceCents = model.Select(m => m.TotalPriceCents).ToArray();
+        var totalPriceCurrencies = model.Select(m => m.TotalPriceCurrency).ToArray();
+        var createdAts = model.Select(m => m.CreatedAt).ToArray();
+        var updatedAts = model.Select(m => m.UpdatedAt).ToArray();
+
+        var result = await connection.QueryAsync<V1OrderDal>(
+            new CommandDefinition(
+                sql, 
+                new 
+                { 
+                    CustomerIds = customerIds,
+                    DeliveryAddresses = deliveryAddresses,
+                    TotalPriceCents = totalPriceCents,
+                    TotalPriceCurrencies = totalPriceCurrencies,
+                    CreatedAts = createdAts,
+                    UpdatedAts = updatedAts
+                }, 
+                cancellationToken: token));
+
+        return result.ToArray();
     }
-
     public async Task<V1OrderDal[]> Query(QueryOrdersDalModel model, CancellationToken token)
     {
         var sql = new StringBuilder(@"

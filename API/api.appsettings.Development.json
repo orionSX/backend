@@ -1,11 +1,15 @@
 {
+
   "DbSettings": {
-    "MigrationConnectionString": "Host=pgbouncer;Port=5432;Database=postgres;User Id=user;Password=mypassword;Pooling=true;LoadTableComposites=true;No Reset On Close=true;Persist Security Info=False;Maximum Pool Size=100;Connection Idle Lifetime=300;Keepalive=300;TCP Keepalive=True",
-    "ConnectionString": "Host=pgbouncer;Port=5432;Database=postgres;User Id=user;Password=mypassword;Pooling=true;LoadTableComposites=true;No Reset On Close=true;Persist Security Info=False;Maximum Pool Size=100;Connection Idle Lifetime=300;Keepalive=300;TCP Keepalive=True"
+    "MigrationConnectionString": "Host=pgbouncer;Port=5432;Database=postgres;User Id=user;Password=mypassword;Timeout=60;Command Timeout=120;",
+    "ConnectionString": "Host=pgbouncer;Port=5432;Database=postgres;User Id=user;Password=mypassword;Timeout=30;Command Timeout=60;Pooling=true;Minimum Pool Size=2;Maximum Pool Size=10;Connection Idle Lifetime=300;Connection Lifetime=600"
   },
+
   "RabbitMqSettings": {
     "HostName": "rabbitmq",
     "Port": 5672,
+    "BatchSize": 100,
+    "BatchTimeoutSeconds": 1,
     "OrderCreatedQueue": "oms.order.created"
   },
   "Logging": {

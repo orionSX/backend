@@ -1,6 +1,7 @@
 services:
   consumer:
     image: consumer
+    
     build:
       context: .
       dockerfile: Consumer/Dockerfile
@@ -9,6 +10,13 @@ services:
       - ASPNETCORE_URLS=http://0.0.0.0:5001
     networks:
       - postgres-network
+    deploy:
+      replicas: 3
+    restart: always
+    depends_on:
+      - rabbitmq
+      - pgbouncer
+    
   api:
     build:
       context: .
@@ -22,10 +30,12 @@ services:
       - postgres-network
     depends_on:
       - pgbouncer
+      - rabbitmq
     volumes:
       - ./API:/src/API
       - ./Models:/src/Models
       - ./Migrations:/src/Migrations
+    restart: unless-stopped
       
 
   postgres:
@@ -39,17 +49,36 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data/
       - ./initdb.d:/docker-entrypoint-initdb.d
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
     networks:
       - postgres-network
-
+    
   pgbouncer:
     image: edoburu/pgbouncer:latest
     environment:
+      
+      - ADMIN_USERS=postgres,admin
       - DB_HOST=postgres
-      - DB_PORT=5432
       - DB_USER=user
       - DB_PASSWORD=mypassword
-      - ADMIN_USERS=postgres,admin
+      
+      - POOL_MODE=transaction
+      - MAX_CLIENT_CONN=10000
+      - DEFAULT_POOL_SIZE=20
+      - MIN_POOL_SIZE=5
+      - RESERVE_POOL_SIZE=5
+      - RESERVE_POOL_TIMEOUT=5
+      - SERVER_LIFETIME=3600
+      - SERVER_IDLE_TIMEOUT=600
+      - SERVER_CONNECT_TIMEOUT=15
+      - SERVER_LOGIN_RETRY=3
+      - QUERY_WAIT_TIMEOUT=30
+      - CLIENT_IDLE_TIMEOUT=600  # 10 минут
+      - CLIENT_LOGIN_TIMEOUT=60
+      - AUTODB_IDLE_TIMEOUT=3600
+      - IGNORE_STARTUP_PARAMETERS=extra_float_digits
+      - STATS_PERIOD=60
     ports:
       - "15432:5432"
     networks:
